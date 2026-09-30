@@ -11,6 +11,8 @@ mod auth;
 mod cli;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod crypto;
+// Unconditional: `DriveClient::new` and the production endpoints are unused by tests.
+#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod drive;
 // Unconditional: the TTY prompt functions stay unused in test builds until P7.
 #[expect(dead_code, reason = "wired into the CLI in P7")]

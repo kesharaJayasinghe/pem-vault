@@ -102,16 +102,16 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 The API reference is in the `drive-api` skill.
 
-- [ ] **P6.1** 🤖 Define the `Store` trait (`list`, `find`, `create`, `update`, `download`, `delete`) and a `DriveClient` implementation. Base URLs are injectable for tests.
-- [ ] **P6.2** 🤖 Add `escape_query_literal()`, which escapes `\` → `\\` and `'` → `\'`, with tests. Names are validated too; this is defense in depth.
-- [ ] **P6.3** 🤖 Add `list()` with `spaces=appDataFolder` and `fields=nextPageToken,files(id,name,size,modifiedTime)`, following `nextPageToken` pagination.
-- [ ] **P6.4** 🤖 Add `find(drive_name) -> Vec<DriveFile>`. It returns every match; callers treat more than one match as an error.
-- [ ] **P6.5** 🤖 Add `create()`: a hand-built `multipart/related` upload with the JSON metadata `{name, parents:["appDataFolder"]}` plus the octet-stream body. Don't use reqwest's `multipart`, which sends `form-data`.
-- [ ] **P6.6** 🤖 Add `update(file_id, bytes)`: `PATCH /upload/drive/v3/files/{id}?uploadType=media`.
-- [ ] **P6.7** 🤖 Add `download(file_id)`: `alt=media`, rejecting responses larger than 2 MiB.
-- [ ] **P6.8** 🤖 Add `delete(file_id)`.
-- [ ] **P6.9** 🤖 Add error mapping for 401, 403, 404, 429 and 5xx, with actionable messages. Retry 429 and 5xx with exponential backoff, at most 3 attempts.
-- [ ] **P6.10** 🤖 Add `wiremock` integration tests for every call: the request shape (headers, query, multipart boundary), pagination and error paths.
+- [x] **P6.1** 🤖 Define the `Store` trait (`list`, `find`, `create`, `update`, `download`, `delete`) and a `DriveClient` implementation. Base URLs are injectable for tests.
+- [x] **P6.2** 🤖 Add `escape_query_literal()`, which escapes `\` → `\\` and `'` → `\'`, with tests. Names are validated too; this is defense in depth.
+- [x] **P6.3** 🤖 Add `list()` with `spaces=appDataFolder` and `fields=nextPageToken,files(id,name,size,modifiedTime)`, following `nextPageToken` pagination.
+- [x] **P6.4** 🤖 Add `find(drive_name) -> Vec<DriveFile>`. It returns every match; callers treat more than one match as an error.
+- [x] **P6.5** 🤖 Add `create()`: a hand-built `multipart/related` upload with the JSON metadata `{name, parents:["appDataFolder"]}` plus the octet-stream body. Don't use reqwest's `multipart`, which sends `form-data`.
+- [x] **P6.6** 🤖 Add `update(file_id, bytes)`: `PATCH /upload/drive/v3/files/{id}?uploadType=media`.
+- [x] **P6.7** 🤖 Add `download(file_id)`: `alt=media`, rejecting responses larger than 2 MiB.
+- [x] **P6.8** 🤖 Add `delete(file_id)`.
+- [x] **P6.9** 🤖 Add error mapping for 401, 403, 404, 429 and 5xx, with actionable messages. Retry 429 and 5xx with exponential backoff, at most 3 attempts.
+- [x] **P6.10** 🤖 Add `wiremock` integration tests for every call: the request shape (headers, query, multipart boundary), pagination and error paths.
 
 ## Phase 7: CLI commands (`cli.rs`, `vault.rs`)
 
@@ -190,3 +190,6 @@ The API reference is in the `drive-api` skill.
 | D18 | `access_token()` also offers an inline sign-in when there's **no** saved session, not only when it has expired | First use after `logout` or on a new machine shouldn't need a separate `auth` command |
 | D19 | The granted `scope` in the token response must include `drive.appdata`; otherwise sign-in fails and nothing is saved | Google's granular consent lets users untick the Drive permission |
 | D20 | Accepted: the one-time auth code and raw HTTP response bytes pass through `url`/`reqwest` buffers that can't be wiped | The code is single-use and useless without the (zeroized) PKCE verifier; tokens are moved into `Zeroizing` as soon as they're parsed |
+| D21 | `Store` uses native `async fn` in traits, with generic (not `dyn`) callers | Rust 2024 supports it; no `async-trait` dependency needed |
+| D22 | A Drive 401 is not auto-refreshed inside `DriveClient`; the error tells the user to run `pem-vault auth` | Each command fetches a fresh access token (valid about 1 hour) right before use, so a 401 mid-command means the session was revoked, not expired |
+| D23 | Downloads are capped on bytes actually received (2 MiB), not on `Content-Length`; Drive file IDs are checked against `[A-Za-z0-9_-]+` before being put in URL paths | Same reasoning as D15; defense in depth against path injection from an unexpected API response |

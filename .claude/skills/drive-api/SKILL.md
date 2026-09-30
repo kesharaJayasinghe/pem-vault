@@ -89,7 +89,7 @@ The body shape is `{"error":{"code":403,"message":"…","errors":[{"reason":"…
 | Status | Typical reason | Handling |
 |---|---|---|
 | 400 | `invalid`, bad `q` | Bug; show the message |
-| 401 | `authError` | Token invalid. Refresh once; if that fails, tell the user to run `pem-vault auth` |
+| 401 | `authError` | Token invalid or revoked. Don't retry; tell the user to run `pem-vault auth` (see BACKLOG D22) |
 | 403 | `insufficientPermissions` | Scope wrong or not granted. Re-run `auth` |
 | 403 | `userRateLimitExceeded`, `rateLimitExceeded` | Retry with backoff |
 | 403 | `accessNotConfigured` | Drive API not enabled for the project (README setup step 2) |
