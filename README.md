@@ -4,7 +4,7 @@
 
 `pem-vault` is a Rust command-line tool that encrypts sensitive `.pem` keys on your machine with a master passphrase, stores only the ciphertext in Google Drive's hidden `appDataFolder`, and retrieves and decrypts them on demand. Google never sees plaintext keys or your passphrase.
 
-> **Status: pre-alpha, under active development.** The commands below describe the intended interface. See [`BACKLOG.md`](BACKLOG.md) for implementation progress.
+> **Status: v0.1.0.** All commands are implemented and covered by 102 automated tests, and have been verified end to end against real Google Drive on **macOS**. Linux and Windows builds are expected to work but haven't been run yet. See [`BACKLOG.md`](BACKLOG.md) for the plan and decision log.
 
 > ⚠️ **There is no recovery.** If you forget your master passphrase, your vaulted keys are unrecoverable. That is the point of zero-knowledge encryption.
 
@@ -19,6 +19,7 @@
 - [Google Cloud setup](#google-cloud-setup)
 - [Build](#build)
 - [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
 - [Operational hardening tips](#operational-hardening-tips)
 - [Contributing](#contributing)
 
@@ -30,7 +31,8 @@
 - **Tamper and swap detection:** the envelope header and the key's name are authenticated, so a renamed, swapped or modified file fails to decrypt.
 - **Least-privilege cloud access:** uses only the `drive.appdata` OAuth scope. The tool cannot see or touch your normal Drive files, and its files don't appear in the Drive web UI.
 - **OS-native token storage:** the OAuth refresh token lives in macOS Keychain, Linux Secret Service or Windows Credential Manager, never in a plaintext config file.
-- **Memory and file hygiene:** secrets are zeroized when they're dropped; decrypted files are created exclusively with `0600` permissions and never overwrite an existing file.
+- **Memory and file hygiene:** secrets are zeroized when they're dropped and locked in RAM while held; core dumps are disabled; decrypted files are created exclusively with `0600` permissions and never overwrite an existing file.
+- **Fails safe:** a wrong passphrase, a tampered file or a name mismatch all give the same error and write nothing; `push` checks the new envelope decrypts before uploading; duplicate names are refused instead of guessed.
 
 ## Security design
 
@@ -112,7 +114,7 @@ Key names must be unique in the vault. `push` refuses to overwrite an existing k
 
 - Rust **1.88+** (edition 2024): install via [rustup](https://rustup.rs)
 - A Google account and a Google Cloud project (free)
-- macOS, Linux (with a Secret Service provider such as GNOME Keyring or KWallet) or Windows
+- macOS (verified), Linux with a Secret Service provider such as GNOME Keyring or KWallet (untested), or Windows (untested; decrypted files aren't restricted to your user, see the threat model)
 
 ## Google Cloud setup
 
@@ -156,8 +158,8 @@ Because the app is unverified, Google shows a "Google hasn't verified this app" 
 ## Build
 
 ```bash
-cargo build --release
-# binary: ./target/release/pem-vault
+cargo build --release          # binary: ./target/release/pem-vault
+cargo install --path . --locked   # or install it as ~/.cargo/bin/pem-vault
 ```
 
 ## Usage
@@ -173,28 +175,50 @@ cargo build --release
 
 ### Examples
 
-```bash
-# One-time sign-in
-pem-vault auth
+```text
+$ pem-vault push -i ~/.ssh/prod-cluster.pem          # name defaults to "prod-cluster.pem"
+[!] Not signed in to Google. Sign in now? [Y/n]        # only when there's no valid session
+[+] Opening your browser to sign in to Google…
+[+] Signed in; Google session saved to the OS credential store
+Enter master passphrase:
+Confirm master passphrase:
+[+] Derived 256-bit key via Argon2id (64 MiB)
+[+] Encrypted prod-cluster.pem (AAD-bound)
+[+] Verified local round-trip
+[+] Uploaded to appDataFolder (file ID: 1uluywNUj8A0t-emDLPj…)
 
-# Vault a key
-pem-vault push --input ~/.ssh/prod-cluster.pem --name prod-cluster.pem
-# Enter master passphrase: ****************
-# Confirm master passphrase: ****************
-# [+] Derived 256-bit key via Argon2id (64 MiB)
-# [+] Encrypted prod-cluster.pem (AAD-bound)
-# [+] Verified local round-trip
-# [+] Uploaded to appDataFolder (file ID: 1aBcDe...)
+$ pem-vault list
+NAME                    SIZE  MODIFIED (UTC)
+prod-cluster.pem       184 B  2026-09-30 06:58
 
-# Retrieve it
-pem-vault pull --name prod-cluster.pem --output /tmp/prod-cluster.pem
-# Enter master passphrase: ****************
-# [+] Downloaded encrypted envelope
-# [+] Verified Poly1305 tag and AAD ("prod-cluster.pem")
-# [+] Wrote /tmp/prod-cluster.pem (mode 0600)
+$ pem-vault pull -n prod-cluster.pem -o /tmp/prod-cluster.pem
+[+] Downloaded encrypted envelope
+Enter master passphrase:
+[+] Verified Poly1305 tag and AAD ("prod-cluster.pem")
+[+] Wrote /tmp/prod-cluster.pem (mode 0600)
+
+$ pem-vault delete -n prod-cluster.pem
+[!] This permanently deletes 'prod-cluster.pem' from the vault. It cannot be undone.
+    Type the key name to confirm: prod-cluster.pem
+[+] Deleted 'prod-cluster.pem' from the vault
 ```
 
-Status messages go to stderr. Secrets are never printed.
+- Status messages go to stderr; only `list`'s table goes to stdout. Secrets are never printed.
+- Exit code `0` on success, `1` on any error (printed as `[!] Error: …`).
+- While the OAuth app is in *Testing* status, expect the sign-in prompt about once a week.
+
+## Troubleshooting
+
+| Message | Cause and fix |
+|---|---|
+| `PEM_VAULT_CLIENT_ID is not set` | The variables only exist in the terminal where you typed `export`. Add them to `~/.zshrc` ([setup step 5](#google-cloud-setup)) and open a new terminal. |
+| Google: *"403: access_denied … can only be accessed by developer-approved testers"* | The Google account you chose isn't a test user **of the project that owns this client ID** (its number is the prefix of the client ID). Add it under *Google Auth Platform → Audience → Test users* and pick that account in the browser. |
+| `Google session expired. Sign in again now?` | Normal in *Testing* status (7-day tokens). Answer `y`. Without a terminal, run `pem-vault auth` first. |
+| `the Google Drive API is not enabled for your Cloud project` | Enable it ([setup step 2](#google-cloud-setup)). |
+| `the Google Drive app-data permission was not granted` | You unticked the Drive permission on the consent screen. Run `pem-vault auth` and leave it ticked. |
+| `decryption failed: wrong passphrase, corrupted data, or name mismatch` | Deliberately generic. Check the passphrase and the exact `--name`. |
+| `the vault has 2 files named …` | Rare: an upload that timed out but actually succeeded and was retried, or two pushes of the same name at the same moment. Run `pem-vault delete --name <KEY>` to remove all copies, then push again. |
+| `Could not lock key material in memory` | The OS memory-lock limit is too low (common on Linux). pem-vault still works; raise the limit with `ulimit -l` to keep secrets out of swap. |
 
 ## Operational hardening tips
 
@@ -222,4 +246,9 @@ git config core.hooksPath .githooks
 
 ## License
 
-TBD.
+Licensed under either of
+
+- Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
+- MIT license ([`LICENSE-MIT`](LICENSE-MIT))
+
+at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in this work, as defined in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.

@@ -152,11 +152,14 @@ The API reference is in the `drive-api` skill.
 
 ## Phase 9: Verification and release
 
-- [ ] **P9.1** 👤🤖 Run the `smoke-test` skill end to end against real Drive on macOS, and on Linux if available.
+- [x] **P9.1** 👤🤖 Run the `smoke-test` skill end to end against real Drive on macOS, and on Linux if available.
+  - ✅ Full run 2026-09-30, macOS, **release** build: all 10 steps passed. Round trip byte-identical, output mode `0600`, `--force` kept the same file ID, the existing output was left unchanged, the wrong passphrase wrote nothing, a missing key failed, and delete emptied the vault. Linux: not run (no Linux machine); CI (P9.3) would cover build and tests there.
   - Early live check (2026-09-30, macOS, debug build): push → list → pull → `cmp` identical → delete all passed; Drive accepted the hand-built `multipart/related` upload. The full checklist, including negative cases and a release build, is still to do.
-- [ ] **P9.2** 🤖 Update the README: remove "pre-alpha / intended interface" wording and make sure the examples match the real output.
+- [x] **P9.2** 🤖 Update the README: remove "pre-alpha / intended interface" wording and make sure the examples match the real output.
 - [ ] **P9.3** 🤖 (Optional) Add GitHub Actions CI on macOS and Linux running fmt, clippy, test and audit.
-- [ ] **P9.4** 👤 Choose a license, then tag `v0.1.0`.
+  - ⏸ Deferred (2026-09-30): the repo has no remote yet. The local pre-commit hook runs the same checks. Adding CI when the repo moves to GitHub would also give the first Linux build and test run.
+- [~] **P9.4** 👤 Choose a license, then tag `v0.1.0`.
+  - License chosen: **MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`, `Cargo.toml`, README). Remaining: commit, then `git tag -a v0.1.0 -m "pem-vault 0.1.0"`.
 
 ---
 

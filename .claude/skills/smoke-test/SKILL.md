@@ -7,7 +7,13 @@ description: End-to-end smoke test of the real pem-vault binary against the user
 
 This runs the real binary against real Google APIs, so only do it when the user asks.
 
-**Passphrase prompts need a real TTY.** `rpassword` can't read from Claude's Bash tool, so any command that prompts must be run by the user with the `!` prefix, for example `! ./target/release/pem-vault push ...`. Claude prepares the commands, then checks the results.
+**Run everything in the user's own terminal.** Passphrase prompts need a real TTY, and Claude's shell doesn't load the user's `PEM_VAULT_CLIENT_*` variables (they come from `~/.zshrc` via the Keychain). So:
+
+1. Claude builds the release binary, generates the throwaway key and a unique key name in `$S`, and writes a script that runs steps 2–12 in order. Each step prints its exit code and appends `step N rc=… expect=…` to `$S/results.txt`, and `2>&1 | tee` saves the output of every step, including the expected failures, so their messages can be checked too.
+2. The user runs the script in their terminal and says when it's finished.
+3. Claude checks `results.txt`, the saved outputs and the files left in `$S` (cmp, mode, unchanged hash, absent files, same file ID), then cleans up.
+
+The steps table below still defines what is tested and what's expected.
 
 Use a throwaway passphrase such as `smoke-test-passphrase-123` and a generated key. Never use a real key.
 
@@ -15,7 +21,7 @@ Use a throwaway passphrase such as `smoke-test-passphrase-123` and a generated k
 
 ```bash
 command -v cargo && cargo build --release
-test -n "$PEM_VAULT_CLIENT_ID" && test -n "$PEM_VAULT_CLIENT_SECRET" && echo creds-ok
+security find-generic-password -s pem-vault-client-id >/dev/null && echo creds-ok   # macOS; values are not printed
 ```
 
 If the credentials are missing, point the user to backlog Phase 1.
