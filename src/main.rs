@@ -10,6 +10,8 @@ mod cli;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod crypto;
 mod drive;
+// Unconditional: the TTY prompt functions stay unused in test builds until P7.
+#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod secure_io;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod vault;

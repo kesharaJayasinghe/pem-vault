@@ -73,10 +73,10 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 ## Phase 4: Secure local I/O (`secure_io.rs`)
 
-- [ ] **P4.1** 🤖 Add `read_input(path) -> Zeroizing<Vec<u8>>`. Reject files over 1 MiB. Warn, but continue, if the content doesn't start with `-----BEGIN`.
-- [ ] **P4.2** 🤖 Add `write_secure(path, bytes)`. It opens with `create_new(true)` and mode `0o600` (Unix), writes, calls `sync_all`, and **deletes the file if any step after creation fails**. On Windows, print a warning that the ACLs are inherited.
-- [ ] **P4.3** 🤖 Add `prompt_passphrase(confirm: bool) -> Zeroizing<String>` using `rpassword` on the TTY. On `push`, require confirmation and at least 12 characters. Never read the passphrase from args or env.
-- [ ] **P4.4** 🤖 Tests with `tempfile`:
+- [x] **P4.1** 🤖 Add `read_input(path) -> Zeroizing<Vec<u8>>`. Reject files over 1 MiB. Warn, but continue, if the content doesn't start with `-----BEGIN`.
+- [x] **P4.2** 🤖 Add `write_secure(path, bytes)`. It opens with `create_new(true)` and mode `0o600` (Unix), writes, calls `sync_all`, and **deletes the file if any step after creation fails**. On Windows, print a warning that the ACLs are inherited.
+- [x] **P4.3** 🤖 Add `prompt_passphrase(confirm: bool) -> Zeroizing<String>` using `rpassword` on the TTY. On `push`, require confirmation and at least 12 characters. Never read the passphrase from args or env.
+- [x] **P4.4** 🤖 Tests with `tempfile`:
   - The created file has mode `0600`.
   - An existing target → error, with its content unchanged.
   - A symlink target → error.
@@ -182,3 +182,5 @@ The API reference is in the `drive-api` skill.
 | D12 | The crypto tests include known-answer vectors generated independently with argon2-cffi + libsodium (PyNaCl) | Round-trip tests only prove the code agrees with itself. The KAT pins the Argon2id params, AAD layout and envelope bytes, and guarantees v1 envelopes stay decryptable. A mutation that drops the header from the AAD is caught |
 | D13 | `validate_key_name` / `drive_name` live in `vault.rs`, not `crypto.rs` | Name policy is a vault concern; `crypto` accepts any `&str` as AAD and stays policy-free |
 | D14 | `[profile.dev.package.argon2] opt-level = 3` | Unoptimized Argon2id at 64 MiB is very slow; this keeps the real-parameter tests and debug runs fast |
+| D15 | `read_input` enforces the 1 MiB limit on the bytes actually read (bounded read into one pre-allocated zeroizing buffer), not on file metadata; it also rejects non-regular and empty files | A metadata check can race with the file changing, and it was redundant: mutation testing showed the limit is enforced by the bounded read |
+| D16 | `prompt_passphrase(confirm = true)` allows 3 attempts; the length policy counts Unicode characters, not bytes | A typo in the confirmation shouldn't abort the whole `push` |
