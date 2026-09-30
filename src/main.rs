@@ -5,6 +5,8 @@
 
 #![deny(unsafe_code)]
 
+// Unconditional: `access_token` and `confirm_on_terminal` are unused until P7.
+#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod auth;
 mod cli;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
@@ -16,8 +18,34 @@ mod secure_io;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod vault;
 
-fn main() {
-    // Hardening (P8.1), CLI parsing (P7.1) and dispatch (P7.2-P7.5) are wired in later tasks.
-    eprintln!("[!] pem-vault is under development; no commands are implemented yet.");
-    std::process::exit(1);
+use std::process::ExitCode;
+
+use anyhow::Result;
+use clap::Parser;
+
+use crate::auth::{Auth, Config, KeyringStore};
+use crate::cli::{Cli, Command};
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
+    // Hardening (P8.1) is added here later.
+    let cli = Cli::parse();
+    match run(cli).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            // `{:#}` prints the context chain on one line; errors never contain secrets.
+            eprintln!("[!] Error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run(cli: Cli) -> Result<()> {
+    let config = Config::from_env()?;
+    let http = auth::http_client()?;
+    let auth = Auth::new(&http, &config, &KeyringStore);
+    match cli.command {
+        Command::Auth => auth.sign_in().await.map(drop),
+        Command::Logout => auth.logout().await,
+    }
 }

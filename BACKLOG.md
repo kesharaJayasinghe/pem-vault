@@ -84,19 +84,19 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 ## Phase 5: Authentication (`auth.rs`)
 
-- [ ] **P5.1** 🤖 Add keyring storage: `save_refresh_token`, `load_refresh_token -> Zeroizing<String>` and `delete_refresh_token`, using service `pem-vault-cli` and account `google-drive-refresh-token`.
-  - AC (manual, macOS): the entry is visible in Keychain Access after `auth`.
-- [ ] **P5.2** 🤖 Add `Config::from_env()`, which reads `PEM_VAULT_CLIENT_ID` and `PEM_VAULT_CLIENT_SECRET`. If either is missing, the error message points to the README setup section.
-- [ ] **P5.3** 🤖 Implement the `auth` loopback flow:
+- [x] **P5.1** 🤖 Add keyring storage: `save_refresh_token`, `load_refresh_token -> Zeroizing<String>` and `delete_refresh_token`, using service `pem-vault-cli` and account `google-drive-refresh-token`.
+  - AC (manual, macOS): the entry is visible in Keychain Access after `auth`. ✅ Verified 2026-09-30: a live `pem-vault auth` created the `pem-vault-cli` / `google-drive-refresh-token` item in the login keychain.
+- [x] **P5.2** 🤖 Add `Config::from_env()`, which reads `PEM_VAULT_CLIENT_ID` and `PEM_VAULT_CLIENT_SECRET`. If either is missing, the error message points to the README setup section.
+- [x] **P5.3** 🤖 Implement the `auth` loopback flow:
   - Bind `127.0.0.1:0` and use redirect URI `http://127.0.0.1:{port}`.
   - Use PKCE (S256) and a random `state`, with `access_type=offline`, `prompt=consent` and scope `drive.appdata`.
   - Open the browser with `webbrowser`, and also print the URL.
   - Accept one request with a 5-minute timeout. Verify `state` and handle the `error=` parameter. Reply with a minimal HTML page ("You can close this tab").
   - Exchange the code. Fail if the response has no `refresh_token`; otherwise save it.
-- [ ] **P5.4** 🤖 Add `access_token()`, which does the refresh-token grant. On `invalid_grant` (expected about every 7 days in Testing mode), delete the stale keyring entry. If stdin is a TTY, ask "[!] Google session expired. Sign in again now? [Y/n]", run the P5.3 flow inline, and continue the original command. If stdin isn't a TTY, fail with "Session expired or revoked. Run `pem-vault auth`."
-  - AC: `push`/`pull` after an expired token completes after one browser sign-in, with no second command needed.
-- [ ] **P5.5** 🤖 Implement `logout`: POST to `https://oauth2.googleapis.com/revoke`, then delete the keyring entry. Succeed even if revocation fails, but warn.
-- [ ] **P5.6** 🤖 Tests: parsing the callback URL (state mismatch, `error=access_denied`, missing code), with the token endpoint mocked in `wiremock`.
+- [x] **P5.4** 🤖 Add `access_token()`, which does the refresh-token grant. On `invalid_grant` (expected about every 7 days in Testing mode), delete the stale keyring entry. If stdin is a TTY, ask "[!] Google session expired. Sign in again now? [Y/n]", run the P5.3 flow inline, and continue the original command. If stdin isn't a TTY, fail with "Session expired or revoked. Run `pem-vault auth`."
+  - AC: `push`/`pull` after an expired token completes after one browser sign-in, with no second command needed. **Logic covered by tests; the real-Google check is deferred to P9.1.**
+- [x] **P5.5** 🤖 Implement `logout`: POST to `https://oauth2.googleapis.com/revoke`, then delete the keyring entry. Succeed even if revocation fails, but warn.
+- [x] **P5.6** 🤖 Tests: parsing the callback URL (state mismatch, `error=access_denied`, missing code), with the token endpoint mocked in `wiremock`.
 
 ## Phase 6: Google Drive client (`drive.rs`)
 
@@ -115,8 +115,10 @@ The API reference is in the `drive-api` skill.
 
 ## Phase 7: CLI commands (`cli.rs`, `vault.rs`)
 
-- [ ] **P7.1** 🤖 Add the clap definitions: `auth`, `logout`, `push --input --name [--force]`, `pull --name --output`, `list`, `delete --name [--yes]`.
+- [~] **P7.1** 🤖 (`auth` and `logout` wired early, after Phase 5, for a live sign-in check) Add the clap definitions: `auth`, `logout`, `push --input --name [--force]`, `pull --name --output`, `list`, `delete --name [--yes]`.
   - Once modules are wired in, remove the temporary `#[cfg_attr(not(test), expect(dead_code, …))]` markers on `mod crypto` / `mod vault` in `main.rs`. The compiler flags them automatically when they're no longer needed.
+- [ ] **P7.1a** 🤖 `logout` shouldn't require `PEM_VAULT_CLIENT_ID`/`SECRET` (revocation only needs the token). Load `Config` only for commands that call the token endpoint.
+  - AC: `pem-vault logout` works with the env vars unset; a second `logout` prints "Not signed in; nothing to do" and exits 0.
 - [ ] **P7.2** 🤖 Implement the `push` flow:
   1. Validate the name.
   2. Read the input.
@@ -184,3 +186,7 @@ The API reference is in the `drive-api` skill.
 | D14 | `[profile.dev.package.argon2] opt-level = 3` | Unoptimized Argon2id at 64 MiB is very slow; this keeps the real-parameter tests and debug runs fast |
 | D15 | `read_input` enforces the 1 MiB limit on the bytes actually read (bounded read into one pre-allocated zeroizing buffer), not on file metadata; it also rejects non-regular and empty files | A metadata check can race with the file changing, and it was redundant: mutation testing showed the limit is enforced by the bounded read |
 | D16 | `prompt_passphrase(confirm = true)` allows 3 attempts; the length policy counts Unicode characters, not bytes | A typo in the confirmation shouldn't abort the whole `push` |
+| D17 | Refresh-token storage is a `TokenStore` trait (`KeyringStore` in production, an in-memory store in tests) instead of free functions | Lets every auth flow be tested without touching the real OS keychain |
+| D18 | `access_token()` also offers an inline sign-in when there's **no** saved session, not only when it has expired | First use after `logout` or on a new machine shouldn't need a separate `auth` command |
+| D19 | The granted `scope` in the token response must include `drive.appdata`; otherwise sign-in fails and nothing is saved | Google's granular consent lets users untick the Drive permission |
+| D20 | Accepted: the one-time auth code and raw HTTP response bytes pass through `url`/`reqwest` buffers that can't be wiped | The code is single-use and useless without the (zeroized) PKCE verifier; tokens are moved into `Zeroizing` as soon as they're parsed |
