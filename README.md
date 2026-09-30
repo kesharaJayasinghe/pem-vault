@@ -164,10 +164,10 @@ cargo build --release
 |---|---|
 | `pem-vault auth` | Sign in with Google in the browser and store the refresh token in the OS keychain |
 | `pem-vault logout` | Revoke the refresh token and remove it from the keychain |
-| `pem-vault push --input <FILE> --name <KEY> [--force]` | Encrypt a local `.pem` and upload it |
+| `pem-vault push --input <FILE> [--name <KEY>] [--force]` | Encrypt a local `.pem` and upload it (the name defaults to the file name) |
 | `pem-vault pull --name <KEY> --output <FILE>` | Download, verify and decrypt to a new `0600` file |
 | `pem-vault list` | List vaulted keys, with size and last-modified time |
-| `pem-vault delete --name <KEY>` | Permanently delete a vaulted key (asks for confirmation) |
+| `pem-vault delete --name <KEY> [--yes]` | Permanently delete a vaulted key, including any duplicate copies (type the name to confirm, or pass `--yes`) |
 
 ### Examples
 

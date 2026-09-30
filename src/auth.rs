@@ -473,30 +473,6 @@ impl<'a, S: TokenStore> Auth<'a, S> {
         }
     }
 
-    /// Revokes the refresh token at Google (best effort) and removes it locally.
-    pub async fn logout(&self) -> Result<()> {
-        let Some(refresh) = self.store.load()? else {
-            eprintln!("[+] Not signed in; nothing to do");
-            return Ok(());
-        };
-        let revoked = self
-            .http
-            .post(&self.endpoints.revoke)
-            .form(&[("token", refresh.as_str())])
-            .send()
-            .await
-            .map(|r| r.status().is_success());
-        match revoked {
-            Ok(true) => eprintln!("[+] Revoked pem-vault's access at Google"),
-            _ => eprintln!(
-                "[!] Could not revoke the token at Google; remove access manually at https://myaccount.google.com/permissions"
-            ),
-        }
-        self.store.delete()?;
-        eprintln!("[+] Removed the Google session from the OS credential store");
-        Ok(())
-    }
-
     /// POSTs to the token endpoint with client credentials. Never echoes response bodies.
     async fn token_request(&self, params: &[(&str, &str)]) -> Result<Tokens, TokenError> {
         let mut form: Vec<(&str, &str)> = params.to_vec();
@@ -551,6 +527,35 @@ impl<'a, S: TokenStore> Auth<'a, S> {
         }
         Ok(tokens)
     }
+}
+
+/// Revokes the refresh token at Google (best effort) and removes it locally.
+///
+/// Needs no OAuth client credentials: revocation takes only the token itself.
+pub async fn logout<S: TokenStore>(http: &Client, store: &S) -> Result<()> {
+    logout_at(http, store, &Endpoints::default().revoke).await
+}
+
+async fn logout_at<S: TokenStore>(http: &Client, store: &S, revoke_url: &str) -> Result<()> {
+    let Some(refresh) = store.load()? else {
+        eprintln!("[+] Not signed in; nothing to do");
+        return Ok(());
+    };
+    let revoked = http
+        .post(revoke_url)
+        .form(&[("token", refresh.as_str())])
+        .send()
+        .await
+        .map(|r| r.status().is_success());
+    match revoked {
+        Ok(true) => eprintln!("[+] Revoked pem-vault's access at Google"),
+        _ => eprintln!(
+            "[!] Could not revoke the token at Google; remove access manually at https://myaccount.google.com/permissions"
+        ),
+    }
+    store.delete()?;
+    eprintln!("[+] Removed the Google session from the OS credential store");
+    Ok(())
 }
 
 /// Asks on the terminal whether to sign in again. Returns `false` without a TTY on stdin, so
@@ -979,6 +984,16 @@ mod tests {
     // ---- Logout (P5.5) --------------------------------------------------------------------------
 
     #[tokio::test]
+    async fn logout_when_signed_out_is_a_no_op() {
+        let server = MockServer::start().await;
+        let (http, store) = (Client::new(), MemoryStore::default());
+        logout_at(&http, &store, &endpoints(&server).revoke)
+            .await
+            .unwrap();
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn logout_revokes_and_deletes() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -988,10 +1003,11 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let (http, config, store) = (Client::new(), config(), MemoryStore::with("refresh-1"));
-        let auth = Auth::new(&http, &config, &store).with_endpoints(endpoints(&server));
+        let (http, store) = (Client::new(), MemoryStore::with("refresh-1"));
 
-        auth.logout().await.unwrap();
+        logout_at(&http, &store, &endpoints(&server).revoke)
+            .await
+            .unwrap();
         assert!(store.get().is_none());
     }
 
@@ -1002,10 +1018,11 @@ mod tests {
             .respond_with(ResponseTemplate::new(500))
             .mount(&server)
             .await;
-        let (http, config, store) = (Client::new(), config(), MemoryStore::with("refresh-1"));
-        let auth = Auth::new(&http, &config, &store).with_endpoints(endpoints(&server));
+        let (http, store) = (Client::new(), MemoryStore::with("refresh-1"));
 
-        auth.logout().await.unwrap();
+        logout_at(&http, &store, &endpoints(&server).revoke)
+            .await
+            .unwrap();
         assert!(store.get().is_none());
     }
 }

@@ -94,7 +94,7 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
   - Accept one request with a 5-minute timeout. Verify `state` and handle the `error=` parameter. Reply with a minimal HTML page ("You can close this tab").
   - Exchange the code. Fail if the response has no `refresh_token`; otherwise save it.
 - [x] **P5.4** 🤖 Add `access_token()`, which does the refresh-token grant. On `invalid_grant` (expected about every 7 days in Testing mode), delete the stale keyring entry. If stdin is a TTY, ask "[!] Google session expired. Sign in again now? [Y/n]", run the P5.3 flow inline, and continue the original command. If stdin isn't a TTY, fail with "Session expired or revoked. Run `pem-vault auth`."
-  - AC: `push`/`pull` after an expired token completes after one browser sign-in, with no second command needed. **Logic covered by tests; the real-Google check is deferred to P9.1.**
+  - AC: `push`/`pull` after an expired token completes after one browser sign-in, with no second command needed. **Logic covered by tests.** ✅ Live 2026-09-30: the *no session* path (after `logout`) signed in inline and `push` continued. The *expired* (`invalid_grant`) path is still to be seen live; it happens naturally 7 days after a sign-in.
 - [x] **P5.5** 🤖 Implement `logout`: POST to `https://oauth2.googleapis.com/revoke`, then delete the keyring entry. Succeed even if revocation fails, but warn.
 - [x] **P5.6** 🤖 Tests: parsing the callback URL (state mismatch, `error=access_denied`, missing code), with the token endpoint mocked in `wiremock`.
 
@@ -115,11 +115,11 @@ The API reference is in the `drive-api` skill.
 
 ## Phase 7: CLI commands (`cli.rs`, `vault.rs`)
 
-- [~] **P7.1** 🤖 (`auth` and `logout` wired early, after Phase 5, for a live sign-in check) Add the clap definitions: `auth`, `logout`, `push --input --name [--force]`, `pull --name --output`, `list`, `delete --name [--yes]`.
+- [x] **P7.1** 🤖 (`auth` and `logout` wired early, after Phase 5, for a live sign-in check) Add the clap definitions: `auth`, `logout`, `push --input --name [--force]`, `pull --name --output`, `list`, `delete --name [--yes]`.
   - Once modules are wired in, remove the temporary `#[cfg_attr(not(test), expect(dead_code, …))]` markers on `mod crypto` / `mod vault` in `main.rs`. The compiler flags them automatically when they're no longer needed.
-- [ ] **P7.1a** 🤖 `logout` shouldn't require `PEM_VAULT_CLIENT_ID`/`SECRET` (revocation only needs the token). Load `Config` only for commands that call the token endpoint.
+- [x] **P7.1a** 🤖 `logout` shouldn't require `PEM_VAULT_CLIENT_ID`/`SECRET` (revocation only needs the token). Load `Config` only for commands that call the token endpoint.
   - AC: `pem-vault logout` works with the env vars unset; a second `logout` prints "Not signed in; nothing to do" and exits 0.
-- [ ] **P7.2** 🤖 Implement the `push` flow:
+- [x] **P7.2** 🤖 Implement the `push` flow:
   1. Validate the name.
   2. Read the input.
   3. Get an access token.
@@ -129,7 +129,7 @@ The API reference is in the `drive-api` skill.
   7. **Decrypt locally to verify.**
   8. `create` or `update`.
   9. Print the file ID.
-- [ ] **P7.3** 🤖 Implement the `pull` flow:
+- [x] **P7.3** 🤖 Implement the `pull` flow:
   1. Validate the name.
   2. **Fail fast if the output path already exists.**
   3. `find`: 0 matches → not found; more than 1 → error.
@@ -137,10 +137,10 @@ The API reference is in the `drive-api` skill.
   5. Prompt for the passphrase.
   6. Decrypt.
   7. Call `write_secure`.
-- [ ] **P7.4** 🤖 Implement `list`: a table of key names (with `.enc` stripped), sizes and modified times, sorted by name.
-- [ ] **P7.5** 🤖 Implement `delete`: require the user to type the key name to confirm, unless `--yes` is passed. Warn that deletion is permanent.
-- [ ] **P7.6** 🤖 Output conventions: status on stderr with `[+]` / `[!]` prefixes, `list` data on stdout, exit code 0 for success and 1 for errors. Never print secrets.
-- [ ] **P7.7** 🤖 Unit-test the `vault.rs` flows against an in-memory `FakeStore`, covering duplicates, `--force`, an existing output, not found and a wrong passphrase.
+- [x] **P7.4** 🤖 Implement `list`: a table of key names (with `.enc` stripped), sizes and modified times, sorted by name.
+- [x] **P7.5** 🤖 Implement `delete`: require the user to type the key name to confirm, unless `--yes` is passed. Warn that deletion is permanent.
+- [x] **P7.6** 🤖 Output conventions: status on stderr with `[+]` / `[!]` prefixes, `list` data on stdout, exit code 0 for success and 1 for errors. Never print secrets.
+- [x] **P7.7** 🤖 Unit-test the `vault.rs` flows against an in-memory `FakeStore`, covering duplicates, `--force`, an existing output, not found and a wrong passphrase.
 
 ## Phase 8: Hardening
 
@@ -152,6 +152,7 @@ The API reference is in the `drive-api` skill.
 ## Phase 9: Verification and release
 
 - [ ] **P9.1** 👤🤖 Run the `smoke-test` skill end to end against real Drive on macOS, and on Linux if available.
+  - Early live check (2026-09-30, macOS, debug build): push → list → pull → `cmp` identical → delete all passed; Drive accepted the hand-built `multipart/related` upload. The full checklist, including negative cases and a release build, is still to do.
 - [ ] **P9.2** 🤖 Update the README: remove "pre-alpha / intended interface" wording and make sure the examples match the real output.
 - [ ] **P9.3** 🤖 (Optional) Add GitHub Actions CI on macOS and Linux running fmt, clippy, test and audit.
 - [ ] **P9.4** 👤 Choose a license, then tag `v0.1.0`.
@@ -193,3 +194,8 @@ The API reference is in the `drive-api` skill.
 | D21 | `Store` uses native `async fn` in traits, with generic (not `dyn`) callers | Rust 2024 supports it; no `async-trait` dependency needed |
 | D22 | A Drive 401 is not auto-refreshed inside `DriveClient`; the error tells the user to run `pem-vault auth` | Each command fetches a fresh access token (valid about 1 hour) right before use, so a 401 mid-command means the session was revoked, not expired |
 | D23 | Downloads are capped on bytes actually received (2 MiB), not on `Content-Length`; Drive file IDs are checked against `[A-Za-z0-9_-]+` before being put in URL paths | Same reasoning as D15; defense in depth against path injection from an unexpected API response |
+| D24 | Each command is split into a local `plan_*` step (name validation, reading input, checking the output path) and a `Store` step; `main` runs the plan **before** signing in | Mistakes fail instantly without a browser round-trip, and flows are testable against a `FakeStore` with scripted prompts |
+| D25 | `push --name` is optional and defaults to the input file's name (still validated) | `pem-vault push -i ~/.ssh/prod.pem` is the common case |
+| D26 | `delete` removes **all** files with the given name (after typed confirmation or `--yes`) instead of refusing duplicates | It's the one unambiguous action, and the only way to recover from duplicates, which `push`/`pull` refuse (invariant 10) |
+| D27 | `push` checks for an existing key before prompting for the passphrase; `pull` checks for the key before prompting | The user never types a passphrase for an operation that's going to be refused |
+| D28 | `logout` is a free function that needs only the stored token and `http` (no `Config`) | Revocation doesn't use client credentials (P7.1a) |

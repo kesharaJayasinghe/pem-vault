@@ -5,28 +5,23 @@
 
 #![deny(unsafe_code)]
 
-// Unconditional: `access_token` and `confirm_on_terminal` are unused until P7.
-#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod auth;
 mod cli;
-#[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod crypto;
-// Unconditional: `DriveClient::new` and the production endpoints are unused by tests.
-#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod drive;
-// Unconditional: the TTY prompt functions stay unused in test builds until P7.
-#[expect(dead_code, reason = "wired into the CLI in P7")]
 mod secure_io;
-#[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod vault;
 
 use std::process::ExitCode;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+use reqwest::Client;
 
 use crate::auth::{Auth, Config, KeyringStore};
 use crate::cli::{Cli, Command};
+use crate::drive::DriveClient;
+use crate::vault::TerminalPrompter;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -43,11 +38,49 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<()> {
-    let config = Config::from_env()?;
     let http = auth::http_client()?;
-    let auth = Auth::new(&http, &config, &KeyringStore);
     match cli.command {
-        Command::Auth => auth.sign_in().await.map(drop),
-        Command::Logout => auth.logout().await,
+        Command::Auth => {
+            let config = Config::from_env()?;
+            Auth::new(&http, &config, &KeyringStore).sign_in().await?;
+        }
+        Command::Logout => auth::logout(&http, &KeyringStore).await?,
+        Command::Push { input, name, force } => {
+            // Local checks first: a bad name or unreadable file fails before any sign-in.
+            let plan = vault::plan_push(&input, name.as_deref(), force)?;
+            let store = connect(&http).await?;
+            vault::push(&store, &mut TerminalPrompter, plan).await?;
+        }
+        Command::Pull { name, output } => {
+            let plan = vault::plan_pull(&name, &output)?;
+            let store = connect(&http).await?;
+            vault::pull(&store, &mut TerminalPrompter, plan).await?;
+        }
+        Command::List => {
+            let store = connect(&http).await?;
+            let entries = vault::list(&store).await?;
+            if entries.is_empty() {
+                eprintln!("[+] The vault is empty");
+            } else {
+                print!("{}", vault::format_list(&entries));
+            }
+        }
+        Command::Delete { name, yes } => {
+            vault::validate_key_name(&name)
+                .with_context(|| format!("invalid key name '{name}'"))?;
+            let store = connect(&http).await?;
+            vault::delete(&store, &mut TerminalPrompter, &name, yes).await?;
+        }
     }
+    Ok(())
+}
+
+/// Signs in (refreshing, or offering an inline browser sign-in if the session expired) and
+/// returns a Drive client holding a fresh access token.
+async fn connect(http: &Client) -> Result<DriveClient> {
+    let config = Config::from_env()?;
+    let token = Auth::new(http, &config, &KeyringStore)
+        .access_token(auth::confirm_on_terminal)
+        .await?;
+    Ok(DriveClient::new(http.clone(), token))
 }

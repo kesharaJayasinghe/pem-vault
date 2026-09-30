@@ -41,6 +41,18 @@ impl DriveFile {
     }
 }
 
+#[cfg(test)]
+impl DriveFile {
+    pub fn for_test(id: &str, name: &str, size: usize) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            size: Some(size.to_string()),
+            modified_time: Some("2026-09-30T06:24:05.000Z".into()),
+        }
+    }
+}
+
 /// Remote storage for encrypted envelopes. `DriveClient` in production; a fake in tests.
 pub trait Store {
     /// All vault files, following pagination.
