@@ -20,7 +20,7 @@ All Drive calls send `Authorization: Bearer <access_token>`, and every file oper
 Notes:
 - Desktop clients accept any loopback port; bind `127.0.0.1:0` and use the port you get.
 - `refresh_token` is only returned with `access_type=offline`, and reliably only with `prompt=consent`. Treat its absence on exchange as an error.
-- Refresh failure `{"error":"invalid_grant"}` means the token was revoked or expired (7 days if the app is still in *Testing*). Tell the user to run `pem-vault auth`.
+- Refresh failure `{"error":"invalid_grant"}` means the token was revoked or expired (7 days if the app is still in *Testing*). The app is intentionally kept in *Testing*, so expect this regularly. Handle it with the inline re-auth prompt (backlog P5.4).
 - Access tokens last about an hour. The CLI gets a new one per command; no caching is needed.
 
 ## Drive v3 endpoints

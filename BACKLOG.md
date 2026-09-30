@@ -30,11 +30,11 @@ The README's *Security design* section is the specification. If a task conflicts
 
 Detailed click-paths are in [README → Google Cloud setup](README.md#google-cloud-setup).
 
-- [ ] **P1.1** 👤 Create the Google Cloud project `pem-vault-storage`.
-- [ ] **P1.2** 👤 Enable the Google Drive API: `gcloud services enable drive.googleapis.com --project=<PROJECT_ID>`.
-- [ ] **P1.3** 👤 In Google Auth Platform, set up Branding, set the Audience to *External*, and **publish to production** so refresh tokens don't expire after 7 days. Under Data Access, add `drive.appdata`.
-- [ ] **P1.4** 👤 Create a *Desktop app* client named `pem-vault-cli` and store its ID and secret in a password manager.
-- [ ] **P1.5** 👤 Export `PEM_VAULT_CLIENT_ID` and `PEM_VAULT_CLIENT_SECRET` in your shell profile. Never commit them.
+- [x] **P1.1** 👤 Create the Google Cloud project `pem-vault-storage`.
+- [x] **P1.2** 👤 Enable the Google Drive API: `gcloud services enable drive.googleapis.com --project=<PROJECT_ID>`.
+- [x] **P1.3** 👤 In Google Auth Platform, set up Branding, set the Audience to *External* in **Testing** status with your account as a test user (see D7), and add `drive.appdata` under Data Access.
+- [x] **P1.4** 👤 Create a *Desktop app* client named `pem-vault-cli` and store its ID and secret in a password manager.
+- [x] **P1.5** 👤 Persist `PEM_VAULT_CLIENT_ID` and `PEM_VAULT_CLIENT_SECRET` in `~/.zshrc`, preferably read from the macOS Keychain (see README setup step 5). Never commit them.
   - AC: `echo $PEM_VAULT_CLIENT_ID` works in a new terminal.
 
 ## Phase 2: Scaffold
@@ -125,7 +125,8 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
   - Open the browser with `webbrowser`, and also print the URL.
   - Accept one request with a 5-minute timeout. Verify `state` and handle the `error=` parameter. Reply with a minimal HTML page ("You can close this tab").
   - Exchange the code. Fail if the response has no `refresh_token`; otherwise save it.
-- [ ] **P5.4** 🤖 Add `access_token()`, which does the refresh-token grant. On `invalid_grant`, show: "Session expired or revoked. Run `pem-vault auth`."
+- [ ] **P5.4** 🤖 Add `access_token()`, which does the refresh-token grant. On `invalid_grant` (expected about every 7 days in Testing mode), delete the stale keyring entry. If stdin is a TTY, ask "[!] Google session expired. Sign in again now? [Y/n]", run the P5.3 flow inline, and continue the original command. If stdin isn't a TTY, fail with "Session expired or revoked. Run `pem-vault auth`."
+  - AC: `push`/`pull` after an expired token completes after one browser sign-in, with no second command needed.
 - [ ] **P5.5** 🤖 Implement `logout`: POST to `https://oauth2.googleapis.com/revoke`, then delete the keyring entry. Succeed even if revocation fails, but warn.
 - [ ] **P5.6** 🤖 Tests: parsing the callback URL (state mismatch, `error=access_denied`, missing code), with the token endpoint mocked in `wiremock`.
 
@@ -204,7 +205,7 @@ The API reference is in the `drive-api` skill.
 | D4 | keyring v3 with explicit platform features | By default v3 uses a non-persistent mock store |
 | D5 | `oauth2` v5 (or hand-rolled PKCE) instead of v4 | v4 pulls in reqwest 0.11 alongside 0.12 |
 | D6 | Hand-built `multipart/related` uploads | Matches Drive's documented contract; reqwest's `multipart` sends `form-data` |
-| D7 | Publish the OAuth app to *In production* | In *Testing* status, refresh tokens expire after 7 days |
+| D7 | Keep the OAuth app in *Testing* status (owner's choice; revised 2026-09-30) and handle expiry with an inline re-auth prompt (P5.4) | The tool is used rarely, so a 7-day token lifetime costs one browser sign-in per use, which is acceptable. Switching to *In production* later needs no code change |
 | D8 | Keep `panic = "unwind"` | With abort, `Zeroizing` destructors never run |
 | D9 | Verify a local decrypt before uploading | Catches passphrase typos and bugs before the only copy lives in the cloud |
 | D10 | Edition 2024, MSRV 1.85 | Current stable edition |

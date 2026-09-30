@@ -123,15 +123,31 @@ You only need to do this once.
    ```
 3. **Configure Google Auth Platform** (formerly the "OAuth consent screen"):
    - **Branding:** app name `pem-vault`, plus your support email.
-   - **Audience:** choose *External*, then **Publish app** (set the status to *In production*).
-     > Apps left in *Testing* status get refresh tokens that **expire after 7 days**, which forces a weekly `pem-vault auth`.
+   - **Audience:** choose *External*, leave the status as *Testing*, and add your Google account as a **test user**.
+     > In *Testing* status, refresh tokens **expire after 7 days**. For occasional use that's fine: when the token has expired, `pem-vault` offers to open the browser and sign you in again before continuing. If you'd rather sign in once, click **Publish app** (*In production*). `drive.appdata` doesn't require Google verification.
    - **Data Access:** add the scope `https://www.googleapis.com/auth/drive.appdata`.
 4. **Create a client:** go to **Clients → Create client**, choose *Desktop app*, name it `pem-vault-cli`, and copy the client ID and secret into your password manager.
-5. **Export the credentials** (for example in your shell profile):
+5. **Make the credentials available in every shell.** An `export` typed at the prompt only lasts for that terminal, so add the variables to your shell startup file (`~/.zshrc` for zsh).
+
+   **Recommended (macOS):** keep the values in the login Keychain, not in plaintext dotfiles. Store them once:
+   ```bash
+   security add-generic-password -U -a "$USER" -s pem-vault-client-id     -w "<client id>"
+   security add-generic-password -U -a "$USER" -s pem-vault-client-secret -w "<client secret>"
+   ```
+   Then add to `~/.zshrc`:
+   ```bash
+   # pem-vault OAuth client (values stored in the macOS Keychain)
+   export PEM_VAULT_CLIENT_ID="$(security find-generic-password -a "$USER" -s pem-vault-client-id -w 2>/dev/null)"
+   export PEM_VAULT_CLIENT_SECRET="$(security find-generic-password -a "$USER" -s pem-vault-client-secret -w 2>/dev/null)"
+   ```
+
+   **Simple (any OS):** add these to your startup file:
    ```bash
    export PEM_VAULT_CLIENT_ID="xxxxxxxx.apps.googleusercontent.com"
    export PEM_VAULT_CLIENT_SECRET="xxxxxxxx"
    ```
+
+   Open a new terminal and check with `echo $PEM_VAULT_CLIENT_ID`.
 
 Because the app is unverified, Google shows a "Google hasn't verified this app" screen during `auth`. Since you own the app, it's safe to continue.
 
