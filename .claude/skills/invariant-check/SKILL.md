@@ -36,7 +36,7 @@ For each item, answer PASS, FAIL (with `file:line` and why) or N/A.
 ### Crypto (`crypto.rs`)
 - [ ] Constants are unchanged: `PEMVAULT`, `0x01`, salt 16, nonce 24, header 49, tag 16.
 - [ ] Argon2id v0x13, m = 65536, t = 3, p = 4, 32-byte output. Fast params are only used under `#[cfg(test)]`.
-- [ ] Salt and nonce are new per encryption from `OsRng`. There's no fixed, derived or reused nonce.
+- [ ] Salt and nonce are new per encryption from the OS CSPRNG (`getrandom`). There's no fixed, derived or reused nonce.
 - [ ] AAD = the full 49-byte header ‖ key name, on **both** encrypt and decrypt.
 - [ ] Length, magic and version are checked before slicing; there are no panicking index operations on untrusted input.
 - [ ] Decrypt failure produces one generic message, with no oracle distinguishing passphrase, data and name.

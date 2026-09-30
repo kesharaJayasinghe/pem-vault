@@ -42,7 +42,7 @@ Breaking any of these is a bug, even if the tests pass. Use the `invariant-check
 2. **Secrets are `Zeroizing`:** passphrases, derived keys, plaintext PEM buffers and refresh/access tokens. Never `clone()` one into a plain `String` or `Vec`, and never `Debug`/`Display` it.
 3. **Secrets never reach output:** not stdout, stderr, logs, error messages, panics or test snapshots. Error messages never include file contents or tokens.
 4. **Passphrases come only from the TTY prompt**, never from CLI args, env vars or files.
-5. **Crypto parameters are frozen per version.** Magic, version `0x01`, Argon2id (64 MiB, t=3, p=4), 16-byte salt, 24-byte nonce and AAD = `header ‖ key_name` never change without bumping `VERSION`. Decryption of every older version must keep working. Salt and nonce always come from `OsRng`; never reuse them or make them deterministic.
+5. **Crypto parameters are frozen per version.** Magic, version `0x01`, Argon2id (64 MiB, t=3, p=4), 16-byte salt, 24-byte nonce and AAD = `header ‖ key_name` never change without bumping `VERSION`. Decryption of every older version must keep working. Salt and nonce always come from the OS CSPRNG (`getrandom`); never reuse them or make them deterministic.
 6. **Decrypt failures are opaque.** Report a single generic message; never say which of passphrase, data or name was wrong.
 7. **Output files:** `create_new(true)` + mode `0o600` at creation, never overwrite, delete the file if the write fails.
 8. **OAuth scope is exactly `drive.appdata`**, and all Drive calls use `appDataFolder`.

@@ -18,7 +18,7 @@ The README's *Security design* section is the specification. If a task conflicts
 
 - [x] **P0.1** 👤 Install the Rust toolchain.
   - `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, then `rustup component add rustfmt clippy`
-  - AC: `cargo --version` reports ≥ 1.85.
+  - AC: `cargo --version` reports ≥ 1.88.
 - [x] **P0.2** 🤖 Initialize the repository in place.
   - `git init`, then `cargo init --name pem-vault`. Use `cargo init`, not `cargo new`, which would create a nested `pem-vault/` directory.
   - `.gitignore`: `/target`, `*.pem`, `*.pem.enc`, `.env*`
@@ -39,43 +39,11 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 ## Phase 2: Scaffold
 
-- [ ] **P2.1** 🤖 Write `Cargo.toml`. Confirm the latest compatible versions with `cargo search` first. Starting point:
-  ```toml
-  [package]
-  name = "pem-vault"
-  version = "0.1.0"
-  edition = "2024"
-  rust-version = "1.85"
-
-  [dependencies]
-  clap = { version = "4", features = ["derive"] }
-  tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
-  anyhow = "1"
-  argon2 = "0.5"
-  chacha20poly1305 = "0.10"
-  rand_core = { version = "0.6", features = ["getrandom"] }   # must match chacha20poly1305's rand_core
-  zeroize = "1.8"
-  rpassword = "7"
-  reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-  oauth2 = { version = "5", default-features = false, features = ["reqwest", "rustls-tls"] }
-  keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
-  serde = { version = "1", features = ["derive"] }
-  serde_json = "1"
-  webbrowser = "1"
-
-  [dev-dependencies]
-  tempfile = "3"
-  wiremock = "0.6"
-
-  [profile.release]
-  strip = true
-  lto = true
-  codegen-units = 1
-  # Keep the default panic = "unwind": with "abort", Zeroizing destructors never run.
-  ```
+- [x] **P2.1** 🤖 Write `Cargo.toml` with the latest compatible crate versions (see D5, D10, D11).
+  - Done: argon2 0.6, chacha20poly1305 0.11, getrandom 0.4, reqwest 0.13 (rustls), keyring 4 (`v1` backends), sha2 and base64 for PKCE, and a release profile with strip + LTO and **no** `panic = "abort"`.
   - AC: `cargo build` succeeds, and `cargo tree -d` shows **no duplicate `reqwest`**. If `oauth2` pulls in a second copy, drop the crate and hand-roll PKCE with `sha2` + `base64` (log the decision).
   - AC: keyring platform features are enabled. Without them keyring v3 silently uses an in-memory mock store.
-- [ ] **P2.2** 🤖 Create the module skeleton with `#![deny(unsafe_code)]` at the crate root:
+- [x] **P2.2** 🤖 Create the module skeleton with `#![deny(unsafe_code)]` at the crate root:
   ```text
   src/
   ├── main.rs        # entry point: hardening init, CLI dispatch, exit codes
@@ -92,7 +60,7 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 - [ ] **P3.1** 🤖 Add the constants and header type: `MAGIC = b"PEMVAULT"`, `VERSION = 0x01`, `SALT_LEN = 16`, `NONCE_LEN = 24`, `HEADER_LEN = 49`, `TAG_LEN = 16`. Add `Header` serialize and parse functions.
 - [ ] **P3.2** 🤖 Add `derive_key(passphrase, salt, params) -> Zeroizing<[u8; 32]>` using Argon2id v0x13 with m = 65536 KiB, t = 3, p = 4. Production code always uses the v1 params; tests use a `#[cfg(test)]` fast parameter set.
-- [ ] **P3.3** 🤖 Add `encrypt(plaintext, passphrase, key_name) -> Vec<u8>`. It draws a new salt and nonce from `OsRng` and uses **AAD = header bytes ‖ key_name**.
+- [ ] **P3.3** 🤖 Add `encrypt(plaintext, passphrase, key_name) -> Vec<u8>`. It draws a new salt and nonce from the OS CSPRNG (`getrandom`) and uses **AAD = header bytes ‖ key_name**.
 - [ ] **P3.4** 🤖 Add `decrypt(envelope, passphrase, key_name) -> Zeroizing<Vec<u8>>`. It checks the length (at least 65 bytes), the magic and the version. On authentication failure it returns a single generic error: "wrong passphrase, corrupted data, or name mismatch".
 - [ ] **P3.5** 🤖 Unit tests:
   - Round-trip; empty and 1 MiB payloads
@@ -203,9 +171,10 @@ The API reference is in the `drive-api` skill.
 | D2 | Drive name = `<key name>.enc`; key names limited to `[A-Za-z0-9._-]`, max 128 characters | Removes the ambiguity between `.pem` and `.pem.enc`; prevents Drive query injection and path tricks |
 | D3 | Duplicate handling is core behavior, not optional hardening: `push` refuses unless `--force` (update in place); more than one match is an error | Otherwise `pull` could silently return a stale key |
 | D4 | keyring v3 with explicit platform features | By default v3 uses a non-persistent mock store |
-| D5 | `oauth2` v5 (or hand-rolled PKCE) instead of v4 | v4 pulls in reqwest 0.11 alongside 0.12 |
+| D5 | Hand-rolled OAuth2 PKCE (`sha2` + `base64` + `getrandom`) instead of the `oauth2` crate | `oauth2` 5.0 (the latest) is built on reqwest 0.12; we use 0.13. The flow is about 100 lines against 3 endpoints |
 | D6 | Hand-built `multipart/related` uploads | Matches Drive's documented contract; reqwest's `multipart` sends `form-data` |
 | D7 | Keep the OAuth app in *Testing* status (owner's choice; revised 2026-09-30) and handle expiry with an inline re-auth prompt (P5.4) | The tool is used rarely, so a 7-day token lifetime costs one browser sign-in per use, which is acceptable. Switching to *In production* later needs no code change |
 | D8 | Keep `panic = "unwind"` | With abort, `Zeroizing` destructors never run |
 | D9 | Verify a local decrypt before uploading | Catches passphrase typos and bugs before the only copy lives in the cloud |
-| D10 | Edition 2024, MSRV 1.85 | Current stable edition |
+| D10 | Edition 2024, MSRV 1.88 | Current edition; keyring 4.x requires 1.88 |
+| D11 | Crate baseline (2026-09-30): argon2 0.6, chacha20poly1305 0.11, reqwest 0.13, keyring 4, `getrandom` directly (no `rand_core`) | Latest stable releases; `cargo tree -d` is clean apart from build-time `syn`. keyring 4's default `v1` feature keeps the v3 `Entry` API with native backends enabled |

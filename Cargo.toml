@@ -2,5 +2,38 @@
 name = "pem-vault"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88" # keyring 4.x MSRV
+description = "Zero-knowledge encryption and Google Drive backup for .pem private keys"
+publish = false
 
 [dependencies]
+# CLI & async runtime
+clap = { version = "4.6", features = ["derive"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+anyhow = "1.0"
+
+# Cryptography & memory hygiene
+argon2 = { version = "0.6", default-features = false, features = ["zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+getrandom = "0.4"                                    # OS CSPRNG: salts, nonces, PKCE verifier, OAuth state
+zeroize = "1.9"
+rpassword = "7.5"
+
+# OAuth2 (hand-rolled PKCE, see BACKLOG D5), HTTP & OS keychain
+sha2 = "0.11"
+base64 = "0.23"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json", "form", "query"] }
+keyring = "4.2"                                      # default "v1" feature = macOS/Windows/Secret Service backends
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+webbrowser = "1.2"
+
+[dev-dependencies]
+tempfile = "3.27"
+wiremock = "0.6"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+# Keep the default panic = "unwind": with "abort", Zeroizing destructors never run.

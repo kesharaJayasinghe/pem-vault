@@ -108,7 +108,7 @@ Key names must be unique in the vault. `push` refuses to overwrite an existing k
 
 ## Requirements
 
-- Rust **1.85+** (edition 2024): install via [rustup](https://rustup.rs)
+- Rust **1.88+** (edition 2024): install via [rustup](https://rustup.rs)
 - A Google account and a Google Cloud project (free)
 - macOS, Linux (with a Secret Service provider such as GNOME Keyring or KWallet) or Windows
 
