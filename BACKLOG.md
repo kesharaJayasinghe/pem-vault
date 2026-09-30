@@ -58,18 +58,18 @@ Detailed click-paths are in [README → Google Cloud setup](README.md#google-clo
 
 ## Phase 3: Crypto engine (`crypto.rs`)
 
-- [ ] **P3.1** 🤖 Add the constants and header type: `MAGIC = b"PEMVAULT"`, `VERSION = 0x01`, `SALT_LEN = 16`, `NONCE_LEN = 24`, `HEADER_LEN = 49`, `TAG_LEN = 16`. Add `Header` serialize and parse functions.
-- [ ] **P3.2** 🤖 Add `derive_key(passphrase, salt, params) -> Zeroizing<[u8; 32]>` using Argon2id v0x13 with m = 65536 KiB, t = 3, p = 4. Production code always uses the v1 params; tests use a `#[cfg(test)]` fast parameter set.
-- [ ] **P3.3** 🤖 Add `encrypt(plaintext, passphrase, key_name) -> Vec<u8>`. It draws a new salt and nonce from the OS CSPRNG (`getrandom`) and uses **AAD = header bytes ‖ key_name**.
-- [ ] **P3.4** 🤖 Add `decrypt(envelope, passphrase, key_name) -> Zeroizing<Vec<u8>>`. It checks the length (at least 65 bytes), the magic and the version. On authentication failure it returns a single generic error: "wrong passphrase, corrupted data, or name mismatch".
-- [ ] **P3.5** 🤖 Unit tests:
+- [x] **P3.1** 🤖 Add the constants and header type: `MAGIC = b"PEMVAULT"`, `VERSION = 0x01`, `SALT_LEN = 16`, `NONCE_LEN = 24`, `HEADER_LEN = 49`, `TAG_LEN = 16`. Add `Header` serialize and parse functions.
+- [x] **P3.2** 🤖 Add `derive_key(passphrase, salt, params) -> Zeroizing<[u8; 32]>` using Argon2id v0x13 with m = 65536 KiB, t = 3, p = 4. Production code always uses the v1 params; tests use a `#[cfg(test)]` fast parameter set.
+- [x] **P3.3** 🤖 Add `encrypt(plaintext, passphrase, key_name) -> Vec<u8>`. It draws a new salt and nonce from the OS CSPRNG (`getrandom`) and uses **AAD = header bytes ‖ key_name**.
+- [x] **P3.4** 🤖 Add `decrypt(envelope, passphrase, key_name) -> Zeroizing<Vec<u8>>`. It checks the length (at least 65 bytes), the magic and the version. On authentication failure it returns a single generic error: "wrong passphrase, corrupted data, or name mismatch".
+- [x] **P3.5** 🤖 Unit tests:
   - Round-trip; empty and 1 MiB payloads
   - Wrong passphrase, wrong key name → error
   - Flip each of the 49 header bytes → error (unsupported-version or auth error)
   - Flip a ciphertext byte and a tag byte → error
   - Truncated inputs (0, 48, 64 bytes) → error
   - Two encryptions of the same input use different salts, nonces and ciphertexts
-- [ ] **P3.6** 🤖 Add `validate_key_name()` with the regex `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (no regex crate needed), plus `drive_name(key) = key + ".enc"`. Test edge cases: empty, 129 characters, `../x`, quotes, unicode, a leading dot.
+- [x] **P3.6** 🤖 Add `validate_key_name()` with the regex `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (no regex crate needed), plus `drive_name(key) = key + ".enc"`. Test edge cases: empty, 129 characters, `../x`, quotes, unicode, a leading dot.
 
 ## Phase 4: Secure local I/O (`secure_io.rs`)
 
@@ -116,6 +116,7 @@ The API reference is in the `drive-api` skill.
 ## Phase 7: CLI commands (`cli.rs`, `vault.rs`)
 
 - [ ] **P7.1** 🤖 Add the clap definitions: `auth`, `logout`, `push --input --name [--force]`, `pull --name --output`, `list`, `delete --name [--yes]`.
+  - Once modules are wired in, remove the temporary `#[cfg_attr(not(test), expect(dead_code, …))]` markers on `mod crypto` / `mod vault` in `main.rs`. The compiler flags them automatically when they're no longer needed.
 - [ ] **P7.2** 🤖 Implement the `push` flow:
   1. Validate the name.
   2. Read the input.
@@ -178,3 +179,6 @@ The API reference is in the `drive-api` skill.
 | D9 | Verify a local decrypt before uploading | Catches passphrase typos and bugs before the only copy lives in the cloud |
 | D10 | Edition 2024, MSRV 1.88 | Current edition; keyring 4.x requires 1.88 |
 | D11 | Crate baseline (2026-09-30): argon2 0.6, chacha20poly1305 0.11, reqwest 0.13, keyring 4, `getrandom` directly (no `rand_core`) | Latest stable releases; `cargo tree -d` is clean apart from build-time `syn`. keyring 4's default `v1` feature keeps the v3 `Entry` API with native backends enabled |
+| D12 | The crypto tests include known-answer vectors generated independently with argon2-cffi + libsodium (PyNaCl) | Round-trip tests only prove the code agrees with itself. The KAT pins the Argon2id params, AAD layout and envelope bytes, and guarantees v1 envelopes stay decryptable. A mutation that drops the header from the AAD is caught |
+| D13 | `validate_key_name` / `drive_name` live in `vault.rs`, not `crypto.rs` | Name policy is a vault concern; `crypto` accepts any `&str` as AAD and stays policy-free |
+| D14 | `[profile.dev.package.argon2] opt-level = 3` | Unoptimized Argon2id at 64 MiB is very slow; this keeps the real-parameter tests and debug runs fast |

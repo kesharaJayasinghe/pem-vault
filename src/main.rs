@@ -7,9 +7,11 @@
 
 mod auth;
 mod cli;
+#[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod crypto;
 mod drive;
 mod secure_io;
+#[cfg_attr(not(test), expect(dead_code, reason = "wired into the CLI in P7"))]
 mod vault;
 
 fn main() {
