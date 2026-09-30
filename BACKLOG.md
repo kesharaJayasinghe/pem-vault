@@ -144,10 +144,11 @@ The API reference is in the `drive-api` skill.
 
 ## Phase 8: Hardening
 
-- [ ] **P8.1** 🤖 Disable core dumps at startup on Unix: `setrlimit(RLIMIT_CORE, 0)`, plus `prctl(PR_SET_DUMPABLE, 0)` on Linux. Put this in a small `hardening.rs` with a scoped `#[allow(unsafe_code)]`, or use the safe `rlimit` crate.
-- [ ] **P8.2** 🤖 Best-effort `mlock` of the key and plaintext buffers (`region` or `memsec` crate). If locking fails, print a warning instead of failing.
-- [ ] **P8.3** 🤖 Add `cargo audit` to the pre-commit routine and fix any advisories.
-- [ ] **P8.4** 🤖 Run the `invariant-check` skill over the **whole codebase** and fix every finding.
+- [x] **P8.1** 🤖 Disable core dumps at startup on Unix: `setrlimit(RLIMIT_CORE, 0)`, plus `prctl(PR_SET_DUMPABLE, 0)` on Linux. Put this in a small `hardening.rs` with a scoped `#[allow(unsafe_code)]`, or use the safe `rlimit` crate.
+- [x] **P8.2** 🤖 Best-effort `mlock` of the key and plaintext buffers (`region` or `memsec` crate). If locking fails, print a warning instead of failing.
+- [x] **P8.3** 🤖 Add `cargo audit` to the pre-commit routine and fix any advisories.
+- [x] **P8.4** 🤖 Run the `invariant-check` skill over the **whole codebase** and fix every finding.
+  - Review 2026-09-30. Fixed: (1) **Argon2's 64 MiB working memory was freed without being wiped**: the argon2 crate's `Blocks::drop` only deallocates, so we now pass our own `Zeroizing` buffer; (2) Drive-provided names and IDs could carry terminal escape sequences into `list` and error output, so they're now sanitized with `printable()`. Everything else passed; see D29–D33 for accepted residual risks.
 
 ## Phase 9: Verification and release
 
@@ -199,3 +200,8 @@ The API reference is in the `drive-api` skill.
 | D26 | `delete` removes **all** files with the given name (after typed confirmation or `--yes`) instead of refusing duplicates | It's the one unambiguous action, and the only way to recover from duplicates, which `push`/`pull` refuse (invariant 10) |
 | D27 | `push` checks for an existing key before prompting for the passphrase; `pull` checks for the key before prompting | The user never types a passphrase for an operation that's going to be refused |
 | D28 | `logout` is a free function that needs only the stored token and `http` (no `Config`) | Revocation doesn't use client credentials (P7.1a) |
+| D29 | Hardening uses the safe `rustix` (`setrlimit`, `PR_SET_DUMPABLE`) and `region` (`mlock`) APIs; the crate stays `#![deny(unsafe_code)]` with no exceptions | Removes the need for the `hardening.rs` unsafe carve-out planned in P8.1 |
+| D30 | Memory locking wraps secrets in `hardening::Locked<T>`: wipe → unlock → free on drop, warn once if `mlock` fails | `region`'s guard `debug_assert!`s if unlocking fails, and unlocking freed memory can fail. Known limit: on macOS a mutation that removes this ordering isn't caught by tests (freed memory stays mapped), so the order is enforced by code and comment |
+| D31 | Not locked in RAM (accepted): the 32-byte derived key and cipher state (short-lived, zeroized), the 64 MiB Argon2 buffer (too large for typical `RLIMIT_MEMLOCK`; zeroized), `encrypt`'s in-place working buffer (zeroized), and the D20 buffers inside `url`/`reqwest` | Locking these costs far more than it protects; macOS swap is encrypted by default |
+| D32 | `read_input` sizes its buffer from file metadata (capped at 1 MiB + 1) and rejects files that grow while being read; the limit is still enforced on bytes read (refines D15) | A fixed 1 MiB buffer could never be locked under Linux's default 64 KiB `RLIMIT_MEMLOCK` |
+| D33 | `cargo audit` is part of the pre-commit gate via a repo-local hook (`.githooks/pre-commit`, enabled with `core.hooksPath`) | Catches vulnerable dependencies before they're committed; bypass with `--no-verify` when offline |

@@ -18,8 +18,8 @@ const PASSPHRASE_ATTEMPTS: usize = 3;
 /// Reads a local key file into a zeroize-on-drop buffer.
 ///
 /// - Rejects anything that is not a regular file (devices, FIFOs, directories).
-/// - Rejects empty files and files over [`MAX_INPUT_LEN`]; at most `MAX_INPUT_LEN + 1` bytes
-///   are ever read, whatever the file's size.
+/// - Rejects empty files, files over [`MAX_INPUT_LEN`], and files that change while being
+///   read; at most `MAX_INPUT_LEN + 1` bytes are ever read, whatever the file's size.
 /// - Reads into a single buffer allocated up front, so no reallocation leaves plaintext
 ///   copies behind in freed memory.
 /// - Prints a warning, but continues, if the content does not look like PEM.
@@ -33,9 +33,13 @@ pub fn read_input(path: &Path) -> Result<Zeroizing<Vec<u8>>> {
         bail!("{display} is not a regular file");
     }
 
-    // The size limit is enforced on the bytes actually read (not on metadata, which can change
-    // between the check and the read); one byte of headroom detects oversized files.
-    let mut buf = Zeroizing::new(vec![0u8; MAX_INPUT_LEN + 1]);
+    // The buffer is sized from metadata (capped at the limit) so it stays small enough to lock
+    // in memory, but the limit itself is enforced on the bytes actually read. One byte of
+    // headroom detects files over the limit, or files that grew after `metadata`.
+    let expected = usize::try_from(metadata.len())
+        .unwrap_or(usize::MAX)
+        .min(MAX_INPUT_LEN);
+    let mut buf = Zeroizing::new(vec![0u8; expected + 1]);
     let mut filled = 0;
     while filled < buf.len() {
         match file.read(&mut buf[filled..]) {
@@ -47,6 +51,9 @@ pub fn read_input(path: &Path) -> Result<Zeroizing<Vec<u8>>> {
     }
     if filled > MAX_INPUT_LEN {
         bail!("{display} is larger than {} KiB", MAX_INPUT_LEN / 1024);
+    }
+    if filled == buf.len() {
+        bail!("{display} changed while it was being read; try again");
     }
     if filled == 0 {
         bail!("{display} is empty");

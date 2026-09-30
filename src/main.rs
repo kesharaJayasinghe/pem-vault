@@ -9,6 +9,7 @@ mod auth;
 mod cli;
 mod crypto;
 mod drive;
+mod hardening;
 mod secure_io;
 mod vault;
 
@@ -25,7 +26,7 @@ use crate::vault::TerminalPrompter;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    // Hardening (P8.1) is added here later.
+    hardening::disable_core_dumps();
     let cli = Cli::parse();
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,

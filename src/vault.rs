@@ -12,6 +12,7 @@ use zeroize::Zeroizing;
 
 use crate::crypto;
 use crate::drive::{DriveFile, Store};
+use crate::hardening::Locked;
 use crate::secure_io;
 
 /// Maximum key-name length in bytes (all allowed characters are ASCII).
@@ -96,8 +97,17 @@ async fn find_one<S: Store>(store: &S, key_name: &str) -> Result<Option<DriveFil
     }
 }
 
+/// Values from Drive are network input: replace control characters so a crafted file name or
+/// ID can't inject terminal escape sequences into pem-vault's output.
+fn printable(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
+}
+
 fn duplicates_error(key_name: &str, files: &[DriveFile]) -> anyhow::Error {
-    let ids: Vec<&str> = files.iter().map(|f| f.id.as_str()).collect();
+    let ids: Vec<String> = files.iter().map(|f| printable(&f.id)).collect();
     anyhow!(
         "the vault has {} files named '{key_name}' (IDs: {}); refusing to guess which one to use. \
          Run `pem-vault delete --name {key_name}` to remove all copies, then push it again",
@@ -116,7 +126,7 @@ fn not_found(key_name: &str) -> anyhow::Error {
 /// Deliberately not `Debug`: it holds the plaintext key.
 pub struct PushPlan {
     key_name: String,
-    plaintext: Zeroizing<Vec<u8>>,
+    plaintext: Locked<Vec<u8>>,
     force: bool,
 }
 
@@ -136,7 +146,7 @@ pub fn plan_push(input: &Path, name: Option<&str>, force: bool) -> Result<PushPl
             .to_owned(),
     };
     validate_key_name(&key_name).with_context(|| format!("invalid key name '{key_name}'"))?;
-    let plaintext = secure_io::read_input(input)?;
+    let plaintext = Locked::new(secure_io::read_input(input)?);
     Ok(PushPlan {
         key_name,
         plaintext,
@@ -162,12 +172,16 @@ pub async fn push<S: Store>(
         bail!("'{key_name}' already exists in the vault; pass --force to replace it");
     }
 
-    let passphrase = prompter.passphrase(true)?;
+    let passphrase = Locked::new(prompter.passphrase(true)?);
     let envelope = crypto::encrypt(&plaintext, passphrase.as_bytes(), &key_name)?;
     eprintln!("[+] Derived 256-bit key via Argon2id (64 MiB)");
     eprintln!("[+] Encrypted {key_name} (AAD-bound)");
 
-    let round_trip = crypto::decrypt(&envelope, passphrase.as_bytes(), &key_name)?;
+    let round_trip = Locked::new(crypto::decrypt(
+        &envelope,
+        passphrase.as_bytes(),
+        &key_name,
+    )?);
     if round_trip.as_slice() != plaintext.as_slice() {
         bail!(
             "internal error: the encrypted key did not decrypt back to the original; nothing was uploaded"
@@ -222,8 +236,12 @@ pub async fn pull<S: Store>(store: &S, prompter: &mut impl Prompter, plan: PullP
     let envelope = store.download(&file.id).await?;
     eprintln!("[+] Downloaded encrypted envelope");
 
-    let passphrase = prompter.passphrase(false)?;
-    let plaintext = crypto::decrypt(&envelope, passphrase.as_bytes(), &plan.key_name)?;
+    let passphrase = Locked::new(prompter.passphrase(false)?);
+    let plaintext = Locked::new(crypto::decrypt(
+        &envelope,
+        passphrase.as_bytes(),
+        &plan.key_name,
+    )?);
     eprintln!("[+] Verified Poly1305 tag and AAD (\"{}\")", plan.key_name);
 
     secure_io::write_secure(&plan.output, &plaintext)?;
@@ -248,13 +266,9 @@ pub async fn list<S: Store>(store: &S) -> Result<Vec<VaultEntry>> {
         .await?
         .into_iter()
         .map(|f| VaultEntry {
-            key_name: f
-                .name
-                .strip_suffix(DRIVE_SUFFIX)
-                .unwrap_or(&f.name)
-                .to_owned(),
+            key_name: printable(f.name.strip_suffix(DRIVE_SUFFIX).unwrap_or(&f.name)),
             size: f.size(),
-            modified: f.modified_time,
+            modified: f.modified_time.as_deref().map(printable),
         })
         .collect();
     entries.sort_by(|a, b| a.key_name.cmp(&b.key_name));
@@ -755,6 +769,15 @@ mod tests {
             .map(|e| e.key_name)
             .collect();
         assert_eq!(names, ["alpha.pem", "alpha.pem", "zeta.pem"]);
+    }
+
+    #[tokio::test]
+    async fn list_neutralizes_control_characters_from_drive() {
+        let store = FakeStore::default();
+        store.insert("evil\u{1b}[2J\u{7}.pem.enc", vec![0; 70]);
+        let entries = list(&store).await.unwrap();
+        assert_eq!(entries[0].key_name, "evil?[2J?.pem");
+        assert!(!format_list(&entries).contains('\u{1b}'));
     }
 
     #[test]

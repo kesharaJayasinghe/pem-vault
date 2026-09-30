@@ -18,7 +18,7 @@ cargo audit                                   # dependency advisories
 cargo tree -d                                 # duplicate deps (reqwest must not be duplicated)
 ```
 
-Pre-commit gate: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
+Pre-commit gate: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && cargo audit`, enforced by `.githooks/pre-commit` (enable per clone with `git config core.hooksPath .githooks`)
 
 ## Architecture
 
@@ -30,6 +30,7 @@ src/crypto.rs      envelope + Argon2id + XChaCha20-Poly1305; pure, no I/O
 src/secure_io.rs   input reading, 0600 output writing, TTY passphrase prompts
 src/auth.rs        OAuth2 loopback + PKCE; refresh token in the OS keyring
 src/drive.rs       Drive v3 REST client (appDataFolder); implements `Store`
+src/hardening.rs   core-dump disabling; `Locked<T>` (mlock'd + zeroized secrets)
 ```
 
 Dependency direction: `main → vault → {crypto, secure_io, Store}`, with `drive` and `auth` behind the `Store` trait and token provider. `crypto` depends on nothing in the crate.
@@ -47,8 +48,10 @@ Breaking any of these is a bug, even if the tests pass. Use the `invariant-check
 7. **Output files:** `create_new(true)` + mode `0o600` at creation, never overwrite, delete the file if the write fails.
 8. **OAuth scope is exactly `drive.appdata`**, and all Drive calls use `appDataFolder`.
 9. **Key names are validated** (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`) before any I/O, and Drive query literals are escaped.
-10. **More than one Drive file with the same name is an error**; never pick one arbitrarily.
-11. **No `unsafe`** except in a scoped `hardening.rs` with a `// SAFETY:` comment.
+10. **More than one Drive file with the same name is an error** for `push`/`pull`; never pick one arbitrarily. `delete` removes *all* copies (D26).
+    Values from Drive (names, IDs) go through `printable()` before being shown.
+11. **No `unsafe` at all** (`#![deny(unsafe_code)]`). Hardening uses the safe `rustix` and `region` APIs.
+    Plaintext keys and passphrases live in `hardening::Locked` (locked in RAM, wiped before unlock). Argon2's working memory is supplied by us and zeroized.
 12. **Release profile keeps `panic = "unwind"`**, so Zeroizing destructors run.
 
 ## Conventions

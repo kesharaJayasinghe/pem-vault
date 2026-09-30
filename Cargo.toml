@@ -18,6 +18,7 @@ chacha20poly1305 = { version = "0.11", default-features = false, features = ["al
 getrandom = "0.4"                                    # OS CSPRNG: salts, nonces, PKCE verifier, OAuth state
 zeroize = "1.9"
 rpassword = "7.5"
+region = "4.0"                                       # mlock/VirtualLock for secret buffers (safe API)
 
 # OAuth2 (hand-rolled PKCE, see BACKLOG D5), HTTP & OS keychain
 sha2 = "0.11"
@@ -27,6 +28,9 @@ keyring = "4.2"                                      # default "v1" feature = ma
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 webbrowser = "1.2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["process"] }  # safe setrlimit / prctl for core-dump hardening
 
 [dev-dependencies]
 tempfile = "3.27"

@@ -16,7 +16,7 @@
 
 use std::fmt;
 
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::{Algorithm, Argon2, Block, Params, Version};
 use chacha20poly1305::XChaCha20Poly1305;
 use chacha20poly1305::aead::{AeadInOut, KeyInit, Nonce, Tag};
 use zeroize::Zeroizing;
@@ -179,8 +179,11 @@ fn derive_key(
     )
     .map_err(|_| CryptoError::Kdf)?;
     let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    // We supply Argon2's working memory (64 MiB for v1) ourselves: the argon2 crate frees its
+    // own buffer without wiping it, and that memory is derived from the passphrase.
+    let mut memory = Zeroizing::new(vec![Block::new(); params.block_count()]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
-        .hash_password_into(passphrase, salt, key.as_mut_slice())
+        .hash_password_into_with_memory(passphrase, salt, key.as_mut_slice(), memory.as_mut_slice())
         .map_err(|_| CryptoError::Kdf)?;
     Ok(key)
 }

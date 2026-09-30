@@ -63,7 +63,10 @@ For each item, answer PASS, FAIL (with `file:line` and why) or N/A.
 - [ ] Only envelopes produced by `crypto::encrypt` are uploaded.
 
 ### Build and dependencies
-- [ ] No `unsafe` outside `hardening.rs`, and each `unsafe` block has a `// SAFETY:` comment.
+- [ ] No `unsafe` anywhere (`#![deny(unsafe_code)]` stays at the crate root).
+- [ ] `main` still calls `hardening::disable_core_dumps()` first.
+- [ ] Plaintext keys and passphrases are wrapped in `hardening::Locked` where they're held; Argon2 runs via `hash_password_into_with_memory` with a `Zeroizing` buffer.
+- [ ] Values from Drive (names, IDs, timestamps) are passed through `printable()` before reaching the terminal.
 - [ ] `[profile.release]` doesn't set `panic = "abort"`.
 - [ ] Any new dependency is justified, `cargo audit` is clean, and `cargo tree -d` shows no duplicate `reqwest` or crypto crates.
 

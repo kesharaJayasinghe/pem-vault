@@ -90,7 +90,9 @@ Key names must be unique in the vault. `push` refuses to overwrite an existing k
 - Passphrases are only read from an interactive terminal prompt, never from arguments or environment variables.
 - Decrypted files are opened with `O_CREAT | O_EXCL` and mode `0600`, so they're never world-readable, never follow symlinks and never overwrite an existing file. A partially written file is deleted if writing fails.
 - Before uploading, `push` decrypts the new envelope locally to confirm it round-trips.
-- Core dumps are disabled at startup on Unix (planned hardening).
+- Core dumps are disabled at startup on Unix (`RLIMIT_CORE = 0`); on Linux the process is also marked non-dumpable, which blocks same-user `ptrace` and `/proc/<pid>/mem` reads.
+- Plaintext keys and passphrases are locked in RAM (`mlock`) while held, so they're not written to swap. This is best effort: if the OS memory-lock limit is too low, pem-vault warns once and continues.
+- Argon2's 64 MiB working memory, which is derived from the passphrase, is zeroized after every key derivation.
 
 ## Threat model
 
@@ -209,7 +211,13 @@ Status messages go to stderr. Secrets are never printed.
 Before each commit, run:
 
 ```bash
-cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && cargo audit
+```
+
+Or enable the bundled hook once per clone, and git runs this for you:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 ## License

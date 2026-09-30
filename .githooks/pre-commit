@@ -1,0 +1,19 @@
+#!/bin/sh
+# pem-vault pre-commit gate: formatting, lints, tests and a dependency audit.
+# Enabled per clone with:  git config core.hooksPath .githooks
+# Bypass in an emergency:  git commit --no-verify
+set -e
+export PATH="$HOME/.cargo/bin:$PATH"
+
+echo "[pre-commit] cargo fmt --check"
+cargo fmt --check
+echo "[pre-commit] cargo clippy"
+cargo clippy --all-targets -q -- -D warnings
+echo "[pre-commit] cargo test"
+cargo test -q
+echo "[pre-commit] cargo audit"
+if ! cargo audit -q; then
+    echo "[pre-commit] cargo audit failed: a vulnerable dependency, or the advisory database couldn't be fetched (offline?)." >&2
+    echo "[pre-commit] Fix it, or bypass once with: git commit --no-verify" >&2
+    exit 1
+fi

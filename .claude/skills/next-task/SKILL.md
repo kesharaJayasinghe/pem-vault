@@ -31,7 +31,7 @@ Moves `pem-vault` forward one backlog item at a time.
 Run the whole gate. Don't claim success on a partial run:
 
 ```bash
-cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && cargo audit
 ```
 
 If the task touched `crypto.rs`, `secure_io.rs`, `auth.rs`, `drive.rs`, `vault.rs` or `Cargo.toml`, also run the `invariant-check` skill on the diff and fix its findings.
